@@ -1,0 +1,24 @@
+{
+  "name": "playwright-tasks-mcp",
+  "version": "1.0.0",
+  "description": "Local stdio MCP server that runs Playwright test suites as MCP tasks",
+  "type": "module",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "smoke": "npm run build && node dist/smoke.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-tasks": "^0.2.2",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

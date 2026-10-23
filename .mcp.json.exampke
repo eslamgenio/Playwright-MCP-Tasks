@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "playwright-tasks": {
+      "command": "node",
+      "args": ["C:/Eslam/2- Areas/Projects/Playwright-MCP-Tasks/dist/index.js"],
+      "env": {
+        "PLAYWRIGHT_PROJECT_DIR": "C:/Eslam/2- Areas/Projects/Playwright-MCP-Tasks/demo-project"
+      }
+    }
+  }
+}

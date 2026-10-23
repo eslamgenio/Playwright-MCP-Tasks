@@ -1,0 +1,122 @@
+# Playwright Tasks MCP server
+
+A local stdio MCP server that runs Playwright test suites as **[MCP tasks](https://code.claude.com/docs/en/mcp#mcp-tasks-for-server-authors)**. A long run doesn't block the conversation. Claude Code gets a task handle right away, polls `tasks/get`, shows live progress in `/tasks`, and reports the result when the run finishes.
+
+```
+run_tests ──► { resultType: "task", taskId: "pw-run-…", status: "working" }
+tasks/get ──► "6/10 done · 6 passed · running: catalog.spec.ts › lists three products [chromium]"
+tasks/get ──► "8/10 done · 7 passed · 1 failed · running: login.spec.ts › …"
+tasks/get ──► { status: "completed", result: { content: [...summary + failures...], isError: true } }
+```
+
+## Tools
+
+| Tool | Kind | What it does |
+|---|---|---|
+| `run_tests` | **task** | Runs `playwright test` with these optional settings: `files`, `grep`, `grepInvert`, `project`, `workers`, `retries`, `headed`, `timeoutMinutes`. The live status shows passed and failed counts and the test that is running. The final result lists failing tests with error excerpts and the HTML report path. `isError` is `true` when any test failed. |
+| `install_browsers` | **task** | Runs `playwright install`, with optional `browsers` and `withDeps`. The status shows the latest download line. |
+| `list_tests` | sync | Runs `playwright test --list` and shows the tests grouped by file. |
+| `get_run_report` | sync | Shows details for a run (`runId` = task ID): per-test status, full errors, and trace, screenshot and video paths. With no `runId` it lists recent runs. |
+
+Every tool accepts `projectDir`, the absolute path to a folder that contains `playwright.config.*`. When it is omitted, the server uses `PLAYWRIGHT_PROJECT_DIR`, then the bundled `demo-project/`.
+
+## Setup
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+The demo project needs its own dependencies and Chromium. Run this from inside `demo-project/`:
+
+```bash
+npm install && npx playwright install chromium
+```
+
+### Register with Claude Code
+
+This folder includes a project-scoped [.mcp.json](.mcp.json). Start `claude` here and approve the `playwright-tasks` server.
+
+To use the server from another folder, such as your own Playwright repo, register it with `claude mcp add` at one of these scopes:
+
+| Scope | Where it's saved | Who gets it |
+|---|---|---|
+| `project` | `.mcp.json` in the folder you run the command from (commit it) | Everyone who opens that project. Each person approves it once. |
+| `local` (the default) | Your `~/.claude.json`, under that folder | Only you, only in that folder |
+| `user` | Your `~/.claude.json` | Only you, in every folder |
+
+Run the command from the root folder of the project. For `project` and `local` scope, that's the folder Claude ties the server to.
+
+```bash
+claude mcp add --scope project playwright-tasks --env PLAYWRIGHT_PROJECT_DIR="C:/path/to/your/playwright-project" -- node "C:/Eslam/2- Areas/Projects/Playwright-MCP-Tasks/dist/index.js"
+```
+
+Swap `--scope project` for `--scope local` or `--scope user` as needed.
+
+- Use the same name, `playwright-tasks`, at only one scope. If two scopes define it, `local` wins over `project`, and `project` wins over `user`. To remove one, run `claude mcp remove playwright-tasks --scope <scope>`.
+- Don't run `--scope project` inside this folder. It would clash with the existing [.mcp.json](.mcp.json) entry, so edit that file instead.
+- Check what's registered and whether it's connected with `claude mcp list` or `claude mcp get playwright-tasks`.
+- A committed `.mcp.json` contains the absolute path to `dist/index.js`. Teammates need this server built at the same path, or they need to edit the path.
+
+To point the server at your own suite, change `PLAYWRIGHT_PROJECT_DIR`, or ask Claude to pass `projectDir`. Your project needs `@playwright/test` installed in its `node_modules`.
+
+### Requirements for task mode (from the Claude Code docs)
+
+- **Claude Code CLI v2.1.304 or later, in a terminal session.** The desktop app and the VS Code extension don't get MCP tasks. There, the same tools still work, but as ordinary blocking calls.
+- The connection must use protocol revision 2026-07-28, which is the default. Don't set `MCP_SDK_GENERATION=v1` or `MCP_PROTOCOL_NEGOTIATION=legacy`.
+- The session must fetch feature flags, so not Bedrock, Vertex or Foundry, and not with telemetry turned off.
+- The call must come from the main conversation, not from a subagent. A one-shot `claude -p "…"` run doesn't get tasks.
+
+Try it: *"Run the Playwright tests"*. The footer then shows `1 MCP task`, and `/tasks` shows live progress. For a green run, add *"…excluding @failing"*. The demo suite has one intentionally failing test so you can see failure reporting.
+
+## How it works
+
+- **Protocol.** The server is built on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`). It advertises `capabilities.extensions["io.modelcontextprotocol/tasks"]` in `server/discover`. It returns a task only when the request's `_meta["io.modelcontextprotocol/clientCapabilities"]` declares the extension. Otherwise it waits and returns a plain result.
+- **Methods:**
+  - `tasks/get` returns status, `statusMessage` and `pollIntervalMs` (3 s for runs, 2 s for installs). On `completed` it adds `result`, and on `failed` it adds `error`.
+  - `tasks/cancel` kills the whole process tree with `taskkill /T` on Windows, or a process-group kill on other systems.
+  - `tasks/update` is acknowledged, because this server never asks for input.
+  - An unknown task ID gets error `-32602`.
+- **Durability.** Each job runs in a detached runner process (`dist/runner.js`). All of its state is written under `.runs/<taskId>/`, or under `PW_MCP_RUNS_DIR` when that is set. So a run keeps going, and `tasks/get` keeps answering, if the MCP server restarts or Claude Code resumes the session.
+
+  ```
+  .runs/pw-run-20261023191345-9198d4/
+    task.json      status record
+    job.json       command the runner executes
+    output.log     Playwright console output
+    progress.json  live counters from dist/reporter.cjs
+    results.json   Playwright JSON report
+    html-report/   Playwright HTML report (npx playwright show-report <dir>)
+    test-results/  traces, screenshots, videos
+    exit.json      written when the job exits
+  ```
+- **Progress.** A custom reporter (`src/reporter.cts`) is added alongside the `json` and `html` reporters through `--reporter`. It writes `progress.json` at most every 500 ms, and the server turns that file into the task's `statusMessage`.
+
+## Development
+
+```bash
+npm run smoke
+```
+
+The smoke test builds the server and talks raw JSON-RPC to it, the same way Claude Code does. It checks:
+
+- discovery
+- `list_tests`
+- a task run polled to completion, across a server restart
+- the progression of status messages
+- `get_run_report`
+- cancellation, and that the process tree is gone afterwards
+- the unknown-ID error
+- the blocking fallback for clients without task support
+
+Source layout:
+
+- `src/index.ts`: tools and the `tasks/*` handlers
+- `src/tasks.ts`: task store and lifecycle
+- `src/playwright.ts`: command lines
+- `src/runner.ts`: detached runner
+- `src/reporter.cts`: progress reporter
+- `src/report.ts`: formatting of the JSON report
