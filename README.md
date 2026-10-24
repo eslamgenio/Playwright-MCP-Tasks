@@ -51,8 +51,13 @@ To use the server from another folder, such as your own Playwright repo, registe
 Run the command from the root folder of the project. For `project` and `local` scope, that's the folder Claude ties the server to.
 
 ```bash
-claude mcp add --scope project playwright-tasks --env PLAYWRIGHT_PROJECT_DIR="C:/path/to/your/playwright-project" -- node "C:/Eslam/2- Areas/Projects/Playwright-MCP-Tasks/dist/index.js"
+claude mcp add --scope project playwright-tasks --env PLAYWRIGHT_PROJECT_DIR="C:/path/to/your/playwright-project" -- node "C:/path/to/Playwright-MCP-Tasks/dist/index.js"
 ```
+
+Replace both paths with absolute paths on your machine:
+
+- `C:/path/to/Playwright-MCP-Tasks` is where you cloned this repo. Run `npm run build` first, so that `dist/index.js` exists.
+- `C:/path/to/your/playwright-project` is your test suite: the folder that contains `playwright.config.*`.
 
 Swap `--scope project` for `--scope local` or `--scope user` as needed.
 
