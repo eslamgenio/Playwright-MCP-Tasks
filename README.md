@@ -70,7 +70,41 @@ To point the server at your own suite, change `PLAYWRIGHT_PROJECT_DIR`, or ask C
 - The session must fetch feature flags, so not Bedrock, Vertex or Foundry, and not with telemetry turned off.
 - The call must come from the main conversation, not from a subagent. A one-shot `claude -p "…"` run doesn't get tasks.
 
-Try it: *"Run the Playwright tests"*. The footer then shows `1 MCP task`, and `/tasks` shows live progress. For a green run, add *"…excluding @failing"*. The demo suite has one intentionally failing test so you can see failure reporting.
+## Using it from Claude Code (terminal CLI)
+
+This is full task mode: runs don't block the conversation, you get live progress, and you can cancel.
+
+### Run tests
+
+Ask in plain language. Claude turns your request into `run_tests` arguments:
+
+- *"Run the Playwright tests"*
+- *"Run only @smoke tests on chromium with 4 workers"*
+- *"Run tests/login.spec.ts with 2 retries, stop after 20 minutes"*
+
+Claude gets a task ID right away, so the conversation isn't blocked and you can keep working while the suite runs.
+
+With the bundled demo suite, add *"…excluding @failing"* for a green run. One test fails on purpose so you can see how failures are reported.
+
+### Follow progress
+
+- **Footer:** shows `1 MCP task` while the run is going.
+- **`/tasks`:** shows the live status, for example `8/20 done · 7 passed · 1 failed · running: checkout.spec.ts › pays`. Claude Code polls `tasks/get` every few seconds; the server sets the interval with `pollIntervalMs`.
+- **Ask Claude:** for example *"How's the test run going?"*. Claude calls `get_run_report` with the run's ID and reports the same status, the command and the timings.
+- **When the run finishes,** Claude gets the summary on its own: counts, failing tests with error excerpts, and the HTML report path. For full errors and trace, screenshot and video paths, ask for the run report, for example *"Show me the failures from that run"*.
+
+### Cancel a run
+
+- Stop the task from `/tasks`, or tell Claude *"Stop the test run"*. Claude Code sends `tasks/cancel`.
+- The server then kills the whole process tree (runner, Playwright, workers and browsers) and marks the task `cancelled`.
+- A cancelled run keeps its `output.log` and `progress.json`, but has no JSON or HTML report, because Playwright is stopped before it writes them.
+- **Exiting Claude Code does not cancel a run.** The run keeps going in the background, and you can follow it again when you resume the session.
+
+### Hung tests
+
+- Playwright's per-test timeout catches most hangs: that test fails and the run continues.
+- For long suites, also ask for a time limit, for example *"…stop after 30 minutes"*. Claude passes it as `timeoutMinutes`. When the limit is reached, the run stops but still writes its reports.
+- With neither in place, a stuck run stays in `working` and its status message stops changing. Cancel it by hand.
 
 ## How it works
 
