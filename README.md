@@ -111,6 +111,60 @@ With the bundled demo suite, add *"…excluding @failing"* for a green run. One 
 - For long suites, also ask for a time limit, for example *"…stop after 30 minutes"*. Claude passes it as `timeoutMinutes`. When the limit is reached, the run stops but still writes its reports.
 - With neither in place, a stuck run stays in `working` and its status message stops changing. Cancel it by hand.
 
+### How failures come back
+
+**Some tests failed.** The task ends as `completed`, not `failed`, and its result has `isError: true`. Claude Code passes it to Claude as a failed tool call. The result looks like this:
+
+```
+Playwright run pw-run-20261023191345-9198d4: 10 tests: 9 passed, 1 failed, 0 flaky, 0 skipped in 35s
+
+Failed tests (1):
+✗ catalog.spec.ts:18 › applies a discount code @failing [chromium]
+    Error: expect(locator).toBeVisible() failed
+    Locator: getByPlaceholder('Discount code')
+    Expected: visible
+    Timeout: 2000ms
+    Error: element(s) not found
+
+HTML report: …\.runs\pw-run-…\html-report
+Full details: call get_run_report with runId "pw-run-…".
+```
+
+- It lists up to 10 failing tests, each with file:line, title, project and the first 8 lines of its error. It also lists flaky tests and any global errors.
+- Full stack traces and trace, screenshot and video paths aren't in this result. They come from `get_run_report` with `onlyFailures: true`. The summary's last line and the server's instructions both point Claude there.
+- While the run is still going, `/tasks` already shows the failure count, for example `… · 1 failed · …`. The error text itself only arrives when the run ends.
+
+**Playwright itself broke** (for example a config error, missing browsers, or a crash before any report was written). The task ends as `failed`. Claude gets `error.message`, which says what went wrong and includes the last part of Playwright's output.
+
+**The run was cancelled or timed out.**
+- Cancelled: the task ends as `cancelled`, and Claude is told "Cancelled by client".
+- Hit `timeoutMinutes`: the task is `completed`, and tests that didn't run are reported as interrupted.
+
+### How the agent acts on failures
+
+The server only reports. What happens next is up to Claude and your prompt. A typical loop:
+
+1. **Read the summary.** The error excerpt is often enough, for example a missing locator or a wrong expected value.
+2. **Get details if needed** with `get_run_report` and `onlyFailures: true`: the full stack, the spec line, and attachment paths.
+   - Claude can open failure screenshots (`.png`) with its file-read tool.
+   - It can't open trace `.zip` files directly. It can give you their paths or the `npx playwright show-report` command instead.
+3. **Read the code:** the spec file at that line, and the app code it exercises.
+4. **Decide what kind of failure it is:**
+   - a broken test (bad selector, outdated expectation)
+   - a real app bug
+   - environment trouble (server down, missing browser; often shows up as a `failed` task)
+   - a flaky test (passed on retry)
+5. **Fix or report.** If you asked for fixes, Claude edits the test or the app. Otherwise it explains what's wrong and suggests a fix.
+6. **Re-run only what failed,** for example `run_tests` with `files: ["tests/catalog.spec.ts:18"]` or a `grep`. That starts a new task, and it's much faster than the full suite.
+
+Steer it with how you ask:
+
+- *"Run the tests and fix any failures"*: the full loop.
+- *"Run the tests and tell me what failed"*: report only.
+- *"…don't change app code, only tests"*: limits what Claude may edit.
+
+For a rule that applies every time, put it in your project's `CLAUDE.md`. For example: *"After a failed run, re-run only the failed tests before reporting."*
+
 ## How it works
 
 - **Protocol.** The server is built on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`). It advertises `capabilities.extensions["io.modelcontextprotocol/tasks"]` in `server/discover`. It returns a task only when the request's `_meta["io.modelcontextprotocol/clientCapabilities"]` declares the extension. Otherwise it waits and returns a plain result.
