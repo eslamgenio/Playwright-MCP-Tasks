@@ -68,6 +68,18 @@ Swap `--scope project` for `--scope local` or `--scope user` as needed.
 
 To point the server at your own suite, change `PLAYWRIGHT_PROJECT_DIR`, or ask Claude to pass `projectDir`. Your project needs `@playwright/test` installed in its `node_modules`.
 
+#### Keep run artifacts in your project
+
+By default, each run's logs, reports, traces and screenshots go to `.runs/` inside this server's folder. To keep them next to your tests instead, set `PW_MCP_RUNS_DIR` when you register the server:
+
+```bash
+claude mcp add --scope project playwright-tasks --env PLAYWRIGHT_PROJECT_DIR="C:/path/to/your/playwright-project" --env PW_MCP_RUNS_DIR="C:/path/to/your/playwright-project/.pw-mcp-runs" -- node "C:/path/to/Playwright-MCP-Tasks/dist/index.js"
+```
+
+- Use an absolute path. A relative one is resolved against the server process's working directory.
+- Add the folder (for example `.pw-mcp-runs/`) to your project's `.gitignore`.
+- `get_run_report` lists runs from this folder only, so runs saved under the old location won't show up after you change it.
+
 ### Requirements for task mode (from the Claude Code docs)
 
 - **Claude Code CLI v2.1.304 or later, in a terminal session.** The desktop app and the VS Code extension don't get MCP tasks. There, the same tools still work, but as ordinary blocking calls.
@@ -173,7 +185,7 @@ For a rule that applies every time, put it in your project's `CLAUDE.md`. For ex
   - `tasks/cancel` kills the whole process tree with `taskkill /T` on Windows, or a process-group kill on other systems.
   - `tasks/update` is acknowledged, because this server never asks for input.
   - An unknown task ID gets error `-32602`.
-- **Durability.** Each job runs in a detached runner process (`dist/runner.js`). All of its state is written under `.runs/<taskId>/`, or under `PW_MCP_RUNS_DIR` when that is set. So a run keeps going, and `tasks/get` keeps answering, if the MCP server restarts or Claude Code resumes the session.
+- **Durability.** Each job runs in a detached runner process (`dist/runner.js`). All of its state is written under `.runs/<taskId>/`, or under `PW_MCP_RUNS_DIR` when that is set (see [Keep run artifacts in your project](#keep-run-artifacts-in-your-project)). So a run keeps going, and `tasks/get` keeps answering, if the MCP server restarts or Claude Code resumes the session.
 
   ```
   .runs/pw-run-20261023191345-9198d4/
